@@ -34,6 +34,25 @@ class Status(IntEnum):
     INTERESTING = 3
 
 
+class StructuralTag(object):
+    __slots__ = ('label',)
+
+    def __init__(self, label):
+        self.label = label
+
+
+STRUCTURAL_TAGS = {}
+
+
+def structural_tag(label):
+    try:
+        return STRUCTURAL_TAGS[label]
+    except KeyError:
+        result = StructuralTag(label)
+        STRUCTURAL_TAGS[label] = result
+        return result
+
+
 global_test_counter = 0
 
 
@@ -59,6 +78,7 @@ class ConjectureData(object):
         self.level = 0
         self.block_starts = {}
         self.blocks = []
+        self.block_labels = []
         self.buffer = bytearray()
         self.output = u''
         self.status = Status.VALID
@@ -78,6 +98,8 @@ class ConjectureData(object):
         self.__intervals = None
         self.shrinking_blocks = set()
         self.discarded = []
+        self.labels = [0]
+        self.labels_used = set()
 
     def __assert_not_frozen(self, name):
         if self.frozen:
@@ -144,10 +166,13 @@ class ConjectureData(object):
             if not self.frozen:
                 self.stop_example()
 
-    def start_example(self):
+    def start_example(self, label=None):
         self.__assert_not_frozen('start_example')
+        if label is None:
+            label = self.labels[-1]
         self.interval_stack.append(self.index)
         self.level += 1
+        self.labels.append(label)
 
     def stop_example(self, discard=False):
         if self.frozen:
@@ -169,6 +194,7 @@ class ConjectureData(object):
                         assert s <= u
                         break
                 self.discarded.append(t)
+        self.labels_used.add(self.labels.pop())
 
     def note_event(self, event):
         self.events.add(event)
@@ -203,6 +229,9 @@ class ConjectureData(object):
         if self.frozen:
             assert isinstance(self.buffer, hbytes)
             return
+        if self.status >= Status.VALID:
+            self.tags.update(structural_tag(l) for l in self.labels_used)
+        del self.labels_used
         self.frozen = True
         self.finish_time = benchmark_time()
 
@@ -251,6 +280,7 @@ class ConjectureData(object):
         n = len(result)
         self.block_starts.setdefault(n, []).append(initial)
         self.blocks.append((initial, initial + n))
+        self.block_labels.append(self.labels[-1])
         assert len(result) == n
         assert self.index == initial
         self.buffer.extend(result)
