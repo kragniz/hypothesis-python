@@ -19,7 +19,8 @@ from __future__ import division, print_function, absolute_import
 
 import hypothesis.strategies as st
 from hypothesis.internal.compat import hbytes
-from hypothesis.internal.conjecture.data import Status, ConjectureData
+from hypothesis.internal.conjecture.data import Status, StructuralTag, \
+    ConjectureData
 
 
 def test_labels_are_cached():
@@ -64,3 +65,44 @@ def test_labels_get_used_for_tagging_branches():
     )
 
     assert get_tags(strat, hbytes(2)) != get_tags(strat, hbytes([1, 0]))
+
+
+def run_for_labels(buffer):
+    buffer = hbytes(buffer)
+
+    def accept(f):
+        data = ConjectureData.for_buffer(buffer)
+        f(data)
+        data.freeze()
+        return frozenset(
+            t.label for t in data.tags if isinstance(t, StructuralTag))
+    return accept
+
+
+def test_discarded_intervals_are_not_in_labels():
+    @run_for_labels([0, 0])
+    def x(data):
+        data.start_example(3)
+        data.draw_bits(1)
+        data.stop_example(discard=True)
+        data.start_example(2)
+        data.draw_bits(1)
+        data.stop_example()
+
+    assert x == frozenset({2})
+
+
+def test_nested_discarded_intervals_are_not_in_labels():
+    @run_for_labels([0, 0, 0])
+    def x(data):
+        data.start_example(3)
+        data.draw_bits(1)
+        data.start_example(4)
+        data.draw_bits(1)
+        data.stop_example()
+        data.stop_example(discard=True)
+        data.start_example(2)
+        data.draw_bits(1)
+        data.stop_example()
+
+    assert x == frozenset({2})

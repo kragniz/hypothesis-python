@@ -19,6 +19,7 @@ from __future__ import division, print_function, absolute_import
 
 import sys
 from enum import IntEnum
+from array import array
 
 from hypothesis.errors import Frozen, StopTest, InvalidArgument
 from hypothesis.internal.compat import hbytes, hrange, text_type, \
@@ -101,8 +102,9 @@ class ConjectureData(object):
         self.__intervals = None
         self.shrinking_blocks = set()
         self.discarded = []
-        self.labels = [0]
-        self.labels_used = set()
+        self.labels = array('Q', [0])
+        self.interval_label_starts = array('Q')
+        self.labels_used = array('Q')
 
     def __assert_not_frozen(self, name):
         if self.frozen:
@@ -178,6 +180,7 @@ class ConjectureData(object):
         self.interval_stack.append(self.index)
         self.level += 1
         self.labels.append(label)
+        self.interval_label_starts.append(len(self.labels_used))
 
     def stop_example(self, discard=False):
         if self.frozen:
@@ -199,7 +202,10 @@ class ConjectureData(object):
                         assert s <= u
                         break
                 self.discarded.append(t)
-        self.labels_used.add(self.labels.pop())
+        self.labels_used.append(self.labels.pop())
+        started_at = self.interval_label_starts.pop()
+        if discard:
+            del self.labels_used[started_at:]
 
     def note_event(self, event):
         self.events.add(event)
@@ -237,6 +243,8 @@ class ConjectureData(object):
         if self.status >= Status.VALID:
             self.tags.update(structural_tag(l) for l in self.labels_used)
         del self.labels_used
+        del self.interval_label_starts
+        del self.labels
         self.frozen = True
         self.finish_time = benchmark_time()
 
