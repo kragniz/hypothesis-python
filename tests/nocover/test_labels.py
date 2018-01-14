@@ -46,6 +46,16 @@ def test_different_composites_have_different_labels():
     assert foo().label != bar().label
 
 
+def test_one_of_label_is_distinct():
+    a = st.integers()
+    b = st.booleans()
+    assert st.one_of(a, b).label != st.one_of(b, a).label
+
+
+def test_lists_label_by_element():
+    assert st.lists(st.integers()).label != st.lists(st.booleans()).label
+
+
 def get_tags(strat, buf):
     d = ConjectureData.for_buffer(buf)
     d.draw(strat)
@@ -106,3 +116,7 @@ def test_nested_discarded_intervals_are_not_in_labels():
         data.stop_example()
 
     assert x == frozenset({2})
+
+
+def test_label_of_deferred_strategy_is_well_defined():
+    recursive = st.deferred(lambda: st.lists(recursive))

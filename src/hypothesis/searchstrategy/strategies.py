@@ -43,6 +43,14 @@ def calc_label(cls):
     return int_from_bytes(hashed[:8])
 
 
+def combine_labels(*labels):
+    label = 0
+    for l in labels:
+        label = (label << 1) & LABEL_MASK
+        label ^= l
+    return label
+
+
 def one_of_strategies(xs):
     """Helper function for unioning multiple strategies."""
     xs = tuple(xs)
@@ -65,6 +73,7 @@ class SearchStrategy(object):
 
     supports_find = True
     validate_called = False
+    __label = None
 
     def recursive_property(name, default):
         """Handle properties which may be mutually recursive among a set of
@@ -379,7 +388,7 @@ class SearchStrategy(object):
     LABELS = {}
 
     @property
-    def label(self):
+    def class_label(self):
         cls = self.__class__
         try:
             return cls.LABELS[cls]
@@ -388,6 +397,15 @@ class SearchStrategy(object):
         result = calc_label(cls)
         cls.LABELS[cls] = result
         return result
+
+    @property
+    def label(self):
+        if self.__label is None:
+            self.__label = self.calc_label()
+        return self.__label
+
+    def calc_label(self):
+        return self.class_label
 
     def do_validate(self):
         pass
@@ -454,9 +472,12 @@ class OneOfStrategy(SearchStrategy):
                 pruned.append(s)
             branch_labels = []
             shift = bit_length(len(pruned))
+            self.__label = combine_labels(self.class_label, *[
+                p.label for p in pruned
+            ])
             for i, p in enumerate(pruned):
                 branch_labels.append(
-                    (((self.label ^ p.label) << shift) + i) & LABEL_MASK)
+                    (((self.__label ^ p.label) << shift) + i) & LABEL_MASK)
             self.__element_strategies = pruned
             self.__branch_labels = tuple(branch_labels)
         return self.__element_strategies
@@ -465,6 +486,10 @@ class OneOfStrategy(SearchStrategy):
     def branch_labels(self):
         self.element_strategies
         return self.__branch_labels
+
+    def calc_label(self):
+        self.element_strategies
+        return self.__label
 
     def do_draw(self, data):
         n = len(self.element_strategies)
