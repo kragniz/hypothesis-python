@@ -25,13 +25,16 @@ from hypothesis.errors import NoExamples, NoSuchExample, Unsatisfiable, \
     UnsatisfiedAssumption
 from hypothesis.control import assume, reject, _current_build_context
 from hypothesis._settings import note_deprecation
-from hypothesis.internal.compat import hrange, qualname, str_to_bytes, \
-    int_from_bytes
+from hypothesis.internal.compat import hrange, qualname, bit_length, \
+    str_to_bytes, int_from_bytes
 from hypothesis.utils.conventions import UniqueIdentifier
 from hypothesis.internal.lazyformat import lazyformat
 from hypothesis.internal.reflection import get_pretty_function_description
 
 calculating = UniqueIdentifier('calculating')
+
+
+LABEL_MASK = 2 ** 64 - 1
 
 
 def calc_label(cls):
@@ -449,20 +452,33 @@ class OneOfStrategy(SearchStrategy):
                     continue
                 seen.add(s)
                 pruned.append(s)
+            branch_labels = []
+            shift = bit_length(len(pruned))
+            for i, p in enumerate(pruned):
+                branch_labels.append(
+                    (((self.label ^ p.label) << shift) + i) & LABEL_MASK)
             self.__element_strategies = pruned
+            self.__branch_labels = tuple(branch_labels)
         return self.__element_strategies
+
+    @property
+    def branch_labels(self):
+        self.element_strategies
+        return self.__branch_labels
 
     def do_draw(self, data):
         n = len(self.element_strategies)
         assert n > 0
         if n == 1:
             return data.draw(self.element_strategies[0])
-        elif self.sampler is None:
+
+        if self.sampler is None:
             i = cu.integer_range(data, 0, n - 1)
         else:
             i = self.sampler.sample(data)
 
-        return data.draw(self.element_strategies[i])
+        return data.draw(
+            self.element_strategies[i], label=self.branch_labels[i])
 
     def __repr__(self):
         return ' | '.join(map(repr, self.original_strategies))

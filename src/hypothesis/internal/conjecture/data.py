@@ -40,6 +40,9 @@ class StructuralTag(object):
     def __init__(self, label):
         self.label = label
 
+    def __repr__(self):
+        return 'StructuralTag(%r)' % (self.label,)
+
 
 STRUCTURAL_TAGS = {}
 
@@ -124,7 +127,7 @@ class ConjectureData(object):
             value = unicode_safe_repr(value)
         self.output += value
 
-    def draw(self, strategy):
+    def draw(self, strategy, label=None):
         if self.is_find and not strategy.supports_find:
             raise InvalidArgument((
                 'Cannot use strategy %r within a call to find (presumably '
@@ -141,15 +144,17 @@ class ConjectureData(object):
             original_tracer = sys.gettrace()
             try:
                 sys.settrace(None)
-                return self.__draw(strategy)
+                return self.__draw(strategy, label=label)
             finally:
                 sys.settrace(original_tracer)
         else:
-            return self.__draw(strategy)
+            return self.__draw(strategy, label=label)
 
-    def __draw(self, strategy):
+    def __draw(self, strategy, label):
         at_top_level = self.depth == 0
-        self.start_example(label=strategy.label)
+        if label is None:
+            label = strategy.label
+        self.start_example(label=label)
         try:
             if not at_top_level:
                 return strategy.do_draw(self)

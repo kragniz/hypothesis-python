@@ -18,6 +18,8 @@
 from __future__ import division, print_function, absolute_import
 
 import hypothesis.strategies as st
+from hypothesis.internal.compat import hbytes
+from hypothesis.internal.conjecture.data import Status, ConjectureData
 
 
 def test_labels_are_cached():
@@ -41,3 +43,24 @@ def bar(draw):
 
 def test_different_composites_have_different_labels():
     assert foo().label != bar().label
+
+
+def get_tags(strat, buf):
+    d = ConjectureData.for_buffer(buf)
+    d.draw(strat)
+    d.freeze()
+    assert d.status == Status.VALID
+    return d.tags
+
+
+def test_labels_get_used_for_tagging():
+    assert get_tags(st.integers(), hbytes(8)) != get_tags(st.text(), hbytes(8))
+
+
+def test_labels_get_used_for_tagging_branches():
+    strat = st.one_of(
+        st.booleans().map(lambda x: not x),
+        st.booleans().map(lambda x: x),
+    )
+
+    assert get_tags(strat, hbytes(2)) != get_tags(strat, hbytes([1, 0]))
