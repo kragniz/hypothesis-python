@@ -1290,6 +1290,15 @@ class Shrinker(object):
         # useless data.
         self.remove_discarded()
 
+        # We only run this pass once because it's unlikely to work more than
+        # once: After this point, we expect that all labels that could be made
+        # zero have been made zero.
+        # This isn't strictly true because e.g. we might introduce some new
+        # label in the shrinking process, but this pass is not required for
+        # correctness, so it's better to err on the side of not running it when
+        # it's probably useless.
+        self.zero_blocks_by_labels()
+
         # We only run this once because delta-debugging is essentially useless
         # and often actively harmful when run on examples which are "close to
         # shrunk" - the attempts to delete long runs mostly just don't work,
@@ -1573,6 +1582,73 @@ class Shrinker(object):
         # discarding if this ever fails. When this next runs explicitly, it
         # will reset the flag if the status changes.
         self.__discarding_failed = not self.incorporate_new_buffer(attempt)
+
+    def zero_blocks_by_labels(self):
+        """Try simultaneously zeroing all blocks that have the same label.
+
+        This is a rather peculiar pass in that unlike all of the other passes
+        it relies on interactively controlling what data is drawn rather than
+        just calculating some buffer and then evaluating the test function with
+        ConjectureData.for_buffer.
+
+        The rough intuition here is that this is a "strategy-wise" shrink pass:
+        It asks what would happen if we, say, replaced all strings with the
+        empty string, or all integers with zero. This is not strictly true,
+        because the structural information we use is hashed and also lower
+        level than that, but it gives an idea of the kind of transformations
+        this makes.
+
+        """
+
+        def calc_label_index():
+            t = self.shrink_target
+            indexed = defaultdict(bytearray)
+            assert len(t.block_labels) == len(t.blocks)
+            for (u, v), l in zip(t.blocks, t.block_labels):
+                if u not in t.forced_indices:
+                    b = t.buffer[u:v]
+                    indexed[l].extend(b)
+            return (
+                sorted(
+                    indexed,
+                    key=lambda l: sort_key(indexed[l]), reverse=True
+                ),
+                {k: hbytes(v) for k, v in indexed.items()}
+            )
+
+        order, index = calc_label_index()
+
+        i = 0
+        while i < len(order):
+            target_label = order[i]
+            counts = Counter()
+
+            if not any(index[target_label]):
+                i += 1
+                continue
+
+            def draw_bytes(data, n):
+                current = data.labels[-1]
+                position = counts[current]
+                counts[current] += n
+                if current == target_label:
+                    return hbytes(n)
+                try:
+                    result = hbytes(index[current])[position:position + n]
+                except KeyError:
+                    return hbytes(n)
+                if len(result) < n:
+                    result += hbytes(n - len(result))
+                return result
+
+            data = ConjectureData(
+                draw_bytes=draw_bytes,
+                max_length=len(self.shrink_target.buffer))
+            self.__engine.test_function(data)
+            if self.incorporate_test_data(data):
+                order, index = calc_label_index()
+            else:
+                i += 1
 
     def delta_interval_deletion(self):
         """Attempt to delete every interval in the example, but be more

@@ -21,6 +21,7 @@ import re
 import time
 from random import seed as seed_random
 from random import Random
+from collections import Counter
 
 import pytest
 
@@ -1228,3 +1229,99 @@ def test_reordering_interaction_with_writing(monkeypatch):
         data.mark_interesting()
 
     assert x == hbytes([0, 0, 2])
+
+
+def test_does_not_try_label_replacing_already_zero_blocks(monkeypatch):
+    monkeypatch.setattr(
+        Shrinker, 'shrink', Shrinker.zero_blocks_by_labels)
+    monkeypatch.setattr(
+        ConjectureRunner, 'generate_new_examples',
+        lambda runner: runner.test_function(
+            ConjectureData.for_buffer([0, 0, 1, 1])))
+
+    counts = Counter()
+
+    @run_to_buffer
+    def x(data):
+        for l in hrange(2):
+            data.start_example(l)
+            data.draw_bits(1)
+            data.draw_bits(1)
+            data.stop_example()
+        counts[hbytes(data.buffer)] += 1
+        data.mark_interesting()
+
+    assert x == hbytes([0, 0, 0, 0])
+    assert counts[hbytes([0, 0, 1, 1])] == 2
+
+
+def test_label_replacing_handles_new_labels_appearing(monkeypatch):
+    monkeypatch.setattr(
+        Shrinker, 'shrink', Shrinker.zero_blocks_by_labels)
+    monkeypatch.setattr(
+        ConjectureRunner, 'generate_new_examples',
+        lambda runner: runner.test_function(
+            ConjectureData.for_buffer([0, 1, 0, 1, 1])))
+
+    @run_to_buffer
+    def x(data):
+        data.start_example(10)
+        n = data.draw_bits(16)
+        data.draw_bits(8)
+        data.stop_example()
+        data.start_example(n)
+        data.draw_bits(1)
+        data.draw_bits(1)
+        data.stop_example()
+        data.mark_interesting()
+
+    assert x == hbytes([0, 0, 0, 0, 0])
+
+
+def test_label_replacing_can_grow_labels(monkeypatch):
+    monkeypatch.setattr(
+        Shrinker, 'shrink', Shrinker.zero_blocks_by_labels)
+    monkeypatch.setattr(
+        ConjectureRunner, 'generate_new_examples',
+        lambda runner: runner.test_function(
+            ConjectureData.for_buffer(hbytes([1] * 5))))
+
+    @run_to_buffer
+    def x(data):
+        data.start_example(1)
+        data.draw_bits(16)
+        here = data.draw_bits(1)
+        if here:
+            data.draw_bits(1)
+            data.stop_example()
+            data.start_example(2)
+        else:
+            data.stop_example()
+            data.start_example(2)
+            if data.draw_bits(1) != 1:
+                data.mark_invalid()
+        data.draw_bits(1)
+        data.stop_example()
+        data.mark_interesting()
+
+    assert x == hbytes([0, 0, 0, 1, 0])
+
+
+def test_label_ignores_written_bytes(monkeypatch):
+    monkeypatch.setattr(
+        Shrinker, 'shrink', Shrinker.zero_blocks_by_labels)
+    monkeypatch.setattr(
+        ConjectureRunner, 'generate_new_examples',
+        lambda runner: runner.test_function(
+            ConjectureData.for_buffer([1, 1, 1])))
+
+    @run_to_buffer
+    def x(data):
+        data.start_example()
+        data.draw_bits(8)
+        data.write(hbytes([1]))
+        data.draw_bits(8)
+        data.stop_example()
+        data.mark_interesting()
+
+    assert x == hbytes([0, 1, 0])
