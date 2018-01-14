@@ -65,6 +65,10 @@ class DeferredStrategy(SearchStrategy):
     def supports_find(self):
         return self.wrapped_strategy.supports_find
 
+    @property
+    def label(self):
+        return self.wrapped_strategy.label
+
     def calc_is_empty(self, recur):
         return recur(self.wrapped_strategy)
 

@@ -17,6 +17,7 @@
 
 from __future__ import division, print_function, absolute_import
 
+import hashlib
 from collections import defaultdict
 
 import hypothesis.internal.conjecture.utils as cu
@@ -24,12 +25,19 @@ from hypothesis.errors import NoExamples, NoSuchExample, Unsatisfiable, \
     UnsatisfiedAssumption
 from hypothesis.control import assume, reject, _current_build_context
 from hypothesis._settings import note_deprecation
-from hypothesis.internal.compat import hrange
+from hypothesis.internal.compat import hrange, qualname, str_to_bytes, \
+    int_from_bytes
 from hypothesis.utils.conventions import UniqueIdentifier
 from hypothesis.internal.lazyformat import lazyformat
 from hypothesis.internal.reflection import get_pretty_function_description
 
 calculating = UniqueIdentifier('calculating')
+
+
+def calc_label(cls):
+    name = str_to_bytes(qualname(cls))
+    hashed = hashlib.md5(name).digest()
+    return int_from_bytes(hashed[:8])
 
 
 def one_of_strategies(xs):
@@ -364,6 +372,19 @@ class SearchStrategy(object):
         except Exception:
             self.validate_called = False
             raise
+
+    LABELS = {}
+
+    @property
+    def label(self):
+        cls = self.__class__
+        try:
+            return cls.LABELS[cls]
+        except KeyError:
+            pass
+        result = calc_label(cls)
+        cls.LABELS[cls] = result
+        return result
 
     def do_validate(self):
         pass

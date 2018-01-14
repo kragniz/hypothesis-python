@@ -149,7 +149,7 @@ class ConjectureData(object):
 
     def __draw(self, strategy):
         at_top_level = self.depth == 0
-        self.start_example()
+        self.start_example(label=strategy.label)
         try:
             if not at_top_level:
                 return strategy.do_draw(self)
